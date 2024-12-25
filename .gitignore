@@ -3,3 +3,7 @@ dist
 everythingjs.egg-info
 .env
 __pycache__
+new.json
+new2.json
+out.json
+test

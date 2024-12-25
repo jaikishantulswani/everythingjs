@@ -21,10 +21,19 @@ setup(
     install_requires=[
         'beautifulsoup4',  # For HTML parsing
         'requests',        # For HTTP requests
+        'tqdm',
+        'flask'
     ],
     entry_points={
         'console_scripts': [
             'everythingjs=everythingjs.app:main',  # CLI entry point
+        ],
+    },
+    include_package_data=True,  # Includes files specified in MANIFEST.in
+    package_data={
+        'everythingjs': [
+            'templates/*',    # Include all files in the templates directory
+            'secrets.regex',  # Include the secrets.regex file
         ],
     },
 )
