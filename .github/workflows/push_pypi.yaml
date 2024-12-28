@@ -20,17 +20,10 @@ jobs:
           python-version: '3.x'  # Use your preferred Python version
 
       - name: Install dependencies
-        run: |
-          pip install build twine pytest  # Install build tools and pytest
+        run: pip install build
 
-      - name: Verify package content
-        run: |
-          python -m build
-          tar -tf dist/*.tar.gz
-          unzip -l dist/*.whl
-          # Optional: Test installation locally
-          pip install dist/*.whl
-
+      - name: Build package
+        run: python -m build
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
