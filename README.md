@@ -28,19 +28,33 @@ pip install everythingjs
 ### Command-Line Arguments
 
 ```
-usage: everythingjs [-h] -i INPUT [-o OUTPUT] [-v] [-H HEADER]
+usage: everythingjs [-h] [-i INPUT] [-db] [-f SERVER] [-o OUTPUT] [-v] [-H HEADER] [-s SECRETS_FILE] [-sjs SAVE_JS] [-store] [-m MONITOR] [-slack SLACK_WEBHOOK] [-j] [-silent]
 
-Extract JS links from a URL or list of URLs and apply regex to them.
+Extract JS links from a URL or a list of URLs
 
-optional arguments:
-  -h, --help            Show this help message and exit.
+options:
+  -h, --help            show this help message and exit
   -i INPUT, --input INPUT
-                        URL or file containing URLs.
+                        URL or file containing URLs
+  -db, --from_db        consume input from db, past results
+  -f SERVER, --server SERVER
+                        Provide output to launch web server
   -o OUTPUT, --output OUTPUT
-                        Output JSON file to save results (optional, prints to CLI if not specified).
-  -v, --verbose         Enable verbose logging.
+                        Output JSON file to save results (optional, prints to CLI if not specified)
+  -v, --verbose         Enable verbose logging
   -H HEADER, --header HEADER
-                        Add custom header (can be used multiple times).
+                        Add custom header (can be used multiple times)
+  -s SECRETS_FILE, --secrets_file SECRETS_FILE
+                        Add your secrets.regex file containing compatible secrets file
+  -sjs SAVE_JS, --save_js SAVE_JS
+                        Save JS files to specific location.
+  -store, --save_db     Save contents to database in ~/.everythingjs/scan_results.db
+  -m MONITOR, --monitor MONITOR
+                        Monitor the process at specified intervals (e.g., 2s, 2m, 1d, 4w)
+  -slack SLACK_WEBHOOK, --slack_webhook SLACK_WEBHOOK
+                        Pass the slack webhook url where you want to post the message updates
+  -j, --jsonl           print output in jsonl format in stdout
+  -silent, --silent     dont print anything except output
 ```
 
 ### Example Usage
@@ -74,6 +88,35 @@ everythingjs -i https://example.com -v
 ```bash
 everythingjs -i https://example.com -H "User-Agent: CustomAgent" -H "Authorization: Bearer TOKEN"
 ```
+
+#### 6. Save beautified javascript to a local directory:
+
+```bash
+everythingjs -i urls.txt -sjs ./saved_js
+```
+
+#### 7. Launch a web server to navigate through results using a web ui (after generating output.json)
+```bash
+everythingjs -f output.json
+```
+
+#### 8. Monitoring JS files for changes on a given input and send udpates to slack
+```bash
+everythingjs -i https://example.com -slack https://hooks.slack.com/services/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
+```
+
+#### 9. Monitor JS files on all domains saved in DB and send updates to slack
+```bash
+everythingjs -db -slack https://hooks.slack.com/services/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
+```
+
+
+#### 10. Monitor JS files on all domains saved in DB and print jsonl output
+```bash
+everythingjs -db jsonl
+```
+
+
 
 ## Output
 
