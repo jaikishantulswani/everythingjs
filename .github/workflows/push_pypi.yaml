@@ -19,8 +19,9 @@ jobs:
         with:
           python-version: '3.x'  # Use your preferred Python version
 
-      - name: Install build tools
-        run: pip install build twine
+      - name: Install dependencies
+        run: |
+          pip install build twine pytest  # Install build tools and pytest
 
       - name: Verify package content
         run: |
@@ -31,7 +32,7 @@ jobs:
           pip install dist/*.whl
 
       - name: Run tests
-        run: pytest  # Replace with your test command if needed
+        run: pytest  # Run your test suite
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
