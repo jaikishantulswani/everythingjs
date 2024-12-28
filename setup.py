@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='everythingjs',
-    version='0.2.1',  # Incremented version for updates
+    version='0.2.2',  # Incremented version for updates
     author='Siva Krishna',
     author_email='krishna.krish759213@gmail.com',
     description='A Python module for working seamlessly with JavaScript files.',
@@ -22,7 +22,9 @@ setup(
         'beautifulsoup4',  # For HTML parsing
         'requests',        # For HTTP requests
         'tqdm',
-        'flask'
+        'flask',
+        'jsbeautifier',
+        'flask-socketio'
     ],
     entry_points={
         'console_scripts': [
