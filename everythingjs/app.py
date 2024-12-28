@@ -11,10 +11,13 @@ from urllib.parse import urlparse, urlunparse
 import threading
 from tqdm import tqdm
 import jsbeautifier
+import traceback
 import hashlib
 import time
 from datetime import datetime
 import sqlite3
+from flask import Flask, render_template
+from flask_socketio import SocketIO
 
 # Define the list of keywords to ignore
 # Define the list of keywords to ignore
@@ -85,6 +88,24 @@ def find_xss_sinks(js_content):
     sorted_matches = list(set(matches_with_lines))
     return sorted_matches
 
+def get_distinct_inputs():
+    home_dir = os.path.expanduser("~")
+    folder_path = os.path.join(home_dir, ".everythingjs")
+    db_path = os.path.join(folder_path, "scan_results.db")
+    distinct_values = []
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT input FROM scan_results")
+        distinct_values = [row[0] for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+    return distinct_values
 
 def create_db_with_data():
     # Get the home directory and create the '.everythingjs' folder
@@ -126,218 +147,6 @@ def create_db_with_data():
 
     #print(f"Database created at: {db_path}")
 
-"""
-def upsert_db_with_data(data):
-    # Get the home directory and create the '.everythingjs' folder
-    home_dir = os.path.expanduser("~")
-    folder_path = os.path.join(home_dir, ".everythingjs")
-    os.makedirs(folder_path, exist_ok=True)
-
-    # Define the SQLite database path
-    db_path = os.path.join(folder_path, "scan_results.db")
-
-    # Connect to the SQLite database
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # Create the scan_results table with jslink as the primary key
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS scan_results (
-            input TEXT,
-            jslink TEXT PRIMARY KEY,
-            endpoints TEXT,
-            secrets TEXT,
-            links TEXT,
-            mapping BOOLEAN,
-            dom_sinks TEXT,
-            js_url TEXT,
-            md5_hash TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        )
-    ''')
-
-    # Get the current time
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Iterate over the data to insert or update the records
-    for item in data:
-        jslink = item.get('jslink', '')
-        # Check if the record with this jslink already exists
-        cursor.execute('SELECT COUNT(*) FROM scan_results WHERE jslink = ?', (jslink,))
-        exists = cursor.fetchone()[0] > 0
-
-        if exists:
-            # Update the existing record if it exists
-            cursor.execute('''
-                UPDATE scan_results
-                SET
-                    input = ?,
-                    endpoints = ?,
-                    secrets = ?,
-                    links = ?,
-                    mapping = ?,
-                    dom_sinks = ?,
-                    js_url = ?,
-                    md5_hash = ?,
-                    updated_at = ?
-                WHERE jslink = ?
-            ''', (
-                item.get('input', ''),
-                json.dumps(item.get('endpoints', {})),
-                json.dumps(item.get('secrets', {})),
-                json.dumps(item.get('links', {})),
-                item.get('mapping', False),
-                json.dumps(item.get('dom_sinks', [])),
-                json.dumps(item.get('js_url', {})),
-                item.get('md5_hash', ''),
-                current_time,
-                jslink
-            ))
-        else:
-            # Insert a new record if it doesn't exist
-            cursor.execute('''
-                INSERT INTO scan_results (input, jslink, endpoints, secrets, links, mapping, dom_sinks, js_url, md5_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                item.get('input', ''),
-                jslink,
-                json.dumps(item.get('endpoints', {})),
-                json.dumps(item.get('secrets', {})),
-                json.dumps(item.get('links', {})),
-                item.get('mapping', False),
-                json.dumps(item.get('dom_sinks', [])),
-                json.dumps(item.get('js_url', {})),
-                item.get('md5_hash', ''),
-                current_time,  # created_at
-                current_time   # updated_at
-            ))
-
-    # Commit and close the connection
-    conn.commit()
-    conn.close()
-
-    print(f"Data upserted successfully in database at: {db_path}")
-"""
-
-def upsert_db_with_data(data):
-    # Get the home directory and create the '.everythingjs' folder
-    home_dir = os.path.expanduser("~")
-    folder_path = os.path.join(home_dir, ".everythingjs")
-    os.makedirs(folder_path, exist_ok=True)
-
-    # Define the SQLite database path
-    db_path = os.path.join(folder_path, "scan_results.db")
-
-    # Connect to the SQLite database
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # Create the scan_results table with jslink as the primary key
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS scan_results (
-            input TEXT,
-            jslink TEXT PRIMARY KEY,
-            endpoints TEXT,
-            secrets TEXT,
-            links TEXT,
-            mapping BOOLEAN,
-            dom_sinks TEXT,
-            js_url TEXT,
-            md5_hash TEXT,
-            created_at TEXT,
-            updated_at TEXT
-        )
-    ''')
-
-    # Get the current time
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    new_rows = 0
-    updated_hashes = 0
-    changed_rows = []
-
-    # Iterate over the data to insert or update the records
-    for item in data:
-        jslink = item.get('jslink', '')
-        new_md5_hash = item.get('md5_hash', '')
-
-        # Check if the record with this jslink already exists
-        cursor.execute('SELECT * FROM scan_results WHERE jslink = ?', (jslink,))
-        existing_row = cursor.fetchone()
-
-        if existing_row:
-            # If record exists, check if the hash is updated
-            existing_md5_hash = existing_row[8]  # md5_hash is at index 8
-
-            if existing_md5_hash != new_md5_hash:
-                updated_hashes += 1
-                changed_rows.append({
-                    'jslink': jslink,
-                    'old_md5_hash': existing_md5_hash,
-                    'new_md5_hash': new_md5_hash
-                })
-
-                # Update the existing record
-                cursor.execute('''
-                    UPDATE scan_results
-                    SET
-                        input = ?,
-                        endpoints = ?,
-                        secrets = ?,
-                        links = ?,
-                        mapping = ?,
-                        dom_sinks = ?,
-                        js_url = ?,
-                        md5_hash = ?,
-                        updated_at = ?
-                    WHERE jslink = ?
-                ''', (
-                    item.get('input', ''),
-                    json.dumps(item.get('endpoints', {})),
-                    json.dumps(item.get('secrets', {})),
-                    json.dumps(item.get('links', {})),
-                    item.get('mapping', False),
-                    json.dumps(item.get('dom_sinks', [])),
-                    json.dumps(item.get('js_url', {})),
-                    new_md5_hash,
-                    current_time,
-                    jslink
-                ))
-        else:
-            # Insert a new record if it doesn't exist
-            new_rows += 1
-            cursor.execute('''
-                INSERT INTO scan_results (input, jslink, endpoints, secrets, links, mapping, dom_sinks, js_url, md5_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                item.get('input', ''),
-                jslink,
-                json.dumps(item.get('endpoints', {})),
-                json.dumps(item.get('secrets', {})),
-                json.dumps(item.get('links', {})),
-                item.get('mapping', False),
-                json.dumps(item.get('dom_sinks', [])),
-                json.dumps(item.get('js_url', {})),
-                new_md5_hash,
-                current_time,  # created_at
-                current_time   # updated_at
-            ))
-
-    # Commit and close the connection
-    conn.commit()
-    conn.close()
-
-    # Return the result as a JSON object
-    result = {
-        'new_rows': new_rows,
-        'updated_hashes': updated_hashes,
-        'changed_rows': changed_rows
-    }
-    print(result)
-
-    print(f"Data upserted successfully in database at: {db_path}")
-    return result
 
 # Regex pattern to match JavaScript file URLs and other patterns
 regex_str = r"""
@@ -448,6 +257,68 @@ def apply_regex_patterns_to_text(file_path, text_data):
 
     return matches
 
+def create_app(interval_seconds=5):
+    from flask import Flask, render_template
+    from flask_socketio import SocketIO
+    import random
+    import sqlite3
+    import time
+    from threading import Thread
+
+    # Initialize Flask app
+    app = Flask(__name__)
+    app.config['SECRET_KEY'] = 'your_secret_key'
+
+    # Initialize Flask-SocketIO
+    socketio = SocketIO(app)
+
+    # List of random messages
+    messages = [
+        "System is stable.",
+        "Warning: High CPU usage.",
+        "Error: Connection lost.",
+        "Service restarted successfully.",
+        "Alert: Disk space low.",
+        "All systems operational.",
+    ]
+
+    def fetch_distinct_inputs():
+        db_path = os.path.join(os.path.expanduser("~"), ".everythingjs", "scan_results.db")
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT input FROM scan_results")
+            results = cursor.fetchall()
+            return [row[0] for row in results]  # Extracting the input value from each tuple
+        except sqlite3.Error as e:
+            print(f"Database error: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
+
+    def emit_random_message():
+        """Emit a random message at the specified interval."""
+        while True:
+            urls = fetch_distinct_inputs()
+            headers = {}
+            socketio.emit('new_message', {'message': f'found {len(urls)} urls to process, scan started..' })
+            #jdata = process_urls(urls, headers, False, False, False, verbose=False)
+            message = random.choice(messages)
+            socketio.emit('new_message', {'message': message})
+            time.sleep(interval_seconds)
+
+    @app.route('/')
+    def index():
+        """Serve the monitor page."""
+        return render_template('monitor.html')
+
+    # Start the background thread to emit messages
+    Thread(target=emit_random_message, daemon=True).start()
+
+    return app, socketio
+
+
 
 def run_flask_app(filename):
     import json
@@ -503,7 +374,6 @@ def run_flask_app(filename):
                     break  # Stop searching in the current file after a match
 
         return jsonify(results)
-
     app.run(debug=False, use_reloader=False)
 
 
@@ -598,6 +468,121 @@ def fetch_js_and_apply_regex(js_url, headers, save_js, secrets_file):
         # Log or handle the exception as needed
         return []
 
+def initialize_database():
+    home_dir = os.path.expanduser("~")
+    folder_path = os.path.join(home_dir, ".everythingjs")
+    os.makedirs(folder_path, exist_ok=True)
+
+    db_path = os.path.join(folder_path, "scan_results.db")
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scan_results (
+            input TEXT,
+            jslink TEXT PRIMARY KEY,
+            endpoints TEXT,
+            secrets TEXT,
+            links TEXT,
+            mapping INTEGER,
+            dom_sinks TEXT,
+            js_url TEXT,
+            md5_hash TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    ''')
+    return conn, cursor, db_path
+
+def process_scan_results(data_list):
+    initialize_database()
+    home_dir = os.path.expanduser("~")
+    folder_path = os.path.join(home_dir, ".everythingjs")
+    os.makedirs(folder_path, exist_ok=True)
+    db_path = os.path.join(folder_path, "scan_results.db")
+
+    inserted_items = []
+    updated_items = []
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        insert_query = """
+            INSERT INTO scan_results (input, jslink, endpoints, secrets, links, mapping, dom_sinks, js_url, md5_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        update_query = """
+            UPDATE scan_results
+            SET endpoints = ?, secrets = ?, links = ?, mapping = ?, dom_sinks = ?, js_url = ?, md5_hash = ?, updated_at = ?
+            WHERE jslink = ?
+        """
+        select_query = "SELECT * FROM scan_results WHERE jslink = ?"
+
+        for data in data_list:
+            input_url = data.get("input", "")
+            jslink = data.get("jslink", "")
+            endpoints = json.dumps(data.get("endpoints", {}).get("endpoints", []))
+            secrets = json.dumps(data.get("endpoints", {}).get("secrets", []))
+            links = json.dumps(data.get("endpoints", {}).get("links", {}))
+            mapping = data.get("endpoints", {}).get("mapping", False)
+            dom_sinks = json.dumps(data.get("endpoints", {}).get("dom_sinks", []))
+            js_url = json.dumps(data.get("endpoints", {}).get("js_url", {}))
+            md5_hash = data.get("endpoints", {}).get("md5_hash", "")
+            timestamp = data.get("endpoints", {}).get("timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            updated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            cursor.execute("SELECT md5_hash FROM scan_results WHERE jslink = ?", (jslink,))
+            existing_row = cursor.fetchone()
+
+            if existing_row:
+                existing_md5 = existing_row[0]
+                if existing_md5 != md5_hash:
+                    cursor.execute(update_query, (endpoints, secrets, links, mapping, dom_sinks, js_url, md5_hash, updated_at, jslink))
+                    conn.commit()  # Ensure changes are saved before fetching updated details
+                    cursor.execute(select_query, (jslink,))
+                    updated_record = cursor.fetchone()
+                    updated_items.append({
+                        "input": updated_record[0],
+                        "jslink": updated_record[1],
+                        "endpoints": json.loads(updated_record[2]),
+                        "secrets": json.loads(updated_record[3]),
+                        "links": json.loads(updated_record[4]),
+                        "mapping": updated_record[5],
+                        "dom_sinks": json.loads(updated_record[6]),
+                        "js_url": json.loads(updated_record[7]),
+                        "md5_hash": updated_record[8],
+                        "created_at": updated_record[9],
+                        "updated_at": updated_record[10],
+                        "status": "updated"
+                    })
+            else:
+                cursor.execute(insert_query, (input_url, jslink, endpoints, secrets, links, mapping, dom_sinks, js_url, md5_hash, timestamp, updated_at))
+                inserted_items.append({
+                    "input": input_url,
+                    "jslink": jslink,
+                    "endpoints": json.loads(endpoints),
+                    "secrets": json.loads(secrets),
+                    "links": json.loads(links),
+                    "mapping": mapping,
+                    "dom_sinks": json.loads(dom_sinks),
+                    "js_url": json.loads(js_url),
+                    "md5_hash": md5_hash,
+                    "created_at": timestamp,
+                    "status": "inserted"
+                })
+
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"SQLite error: {e}")
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+    finally:
+        conn.close()
+
+    return {"inserted": inserted_items, "updated": updated_items}
+
+
 def process_urls(urls, headers, secrets_file, save_js, save_db, verbose=False):
     results = []
     with ThreadPoolExecutor() as executor:
@@ -638,8 +623,9 @@ def process_urls(urls, headers, secrets_file, save_js, save_db, verbose=False):
                                 "jslink": js_link,
                                 "endpoints": regex_matches
                             })
-        if save_db is True:
-            changes_results = upsert_db_with_data(results)
+        if save_db:
+            #print("upserting data...")
+            changes_results = process_scan_results(results)
     return results, changes_results
 
 def load_urls(input_source):
@@ -680,14 +666,103 @@ def print_js_banner():
     print(tagline)
     print(x_handle)
 
+def post_to_ui(message_dict):
+    # Check if both 'inserted' and 'updated' are empty
+    if not message_dict['inserted'] and not message_dict['updated']:
+        print("No new or updated entries to display.")
+        return None  # Return None to indicate no message was displayed
+
+    # Display inserted messages
+    for item in message_dict['inserted']:
+        formatted_message = (
+            f"🚨 *JS Discovered: {item['input']}* 🚨\n"
+            f"JS Link: {item['jslink']}\n"
+            f"MD5 Hash: {item['md5_hash']}\n"
+            "Endpoints:\n"
+            ""
+        )
+        formatted_message += "\n".join(item['endpoints'])
+        formatted_message += ""
+        
+        print("\n" + "="*50)
+        print(formatted_message)
+        print("="*50 + "\n")
+
+    # Display updated messages
+    for item in message_dict['updated']:
+        formatted_message = (
+            f"⚠️ *Javascript Updated: {item['input']}* ⚠️\n"
+            f"JS Link: {item['jslink']}\n"
+            f"MD5 Hash: {item['md5_hash']}"
+        )
+        
+        print("\n" + "="*50)
+        print(formatted_message)
+        print("="*50 + "\n")
+
+import json
+import requests
+
+def post_to_slack(webhook_url, message_dict):
+    # Check if both 'inserted' and 'updated' are empty
+    if not message_dict['inserted'] and not message_dict['updated']:
+        print("No new or updated entries to send.")
+        return None  # Return None to indicate no message was sent
+    
+    headers = {'Content-Type': 'application/json'}
+    
+    # Send inserted messages
+    for item in message_dict['inserted']:
+        if item['endpoints']:  # Only proceed if the endpoint list is not empty
+            formatted_message = (
+                f"🚨 *JS Discovered: {item['input']}* 🚨\n"
+                f"JS Link: {item['jslink']}\n"
+                f"MD5 Hash: `{item['md5_hash']}`\n"
+                "Endpoints:\n"
+                "```"
+            )
+            formatted_message += "\n".join(item['endpoints'])
+            formatted_message += "```"
+            
+            payload = {"text": formatted_message}
+            response = requests.post(webhook_url, headers=headers, data=json.dumps(payload))
+            
+            if response.status_code == 200:
+                pass
+                #print(f"Inserted message for {item['input']} posted successfully!")
+            else:
+                pass
+                #print(f"Failed to post inserted message for {item['input']}. Status Code: {response.status_code}, Response: {response.text}")
+    
+    # Send updated messages
+    for item in message_dict['updated']:
+        if item['endpoints']:  # Only proceed if the endpoint list is not empty
+            formatted_message = (
+                f"⚠️ *Javascript Updated: {item['input']}* ⚠️\n"
+                f"JS Link: {item['jslink']}\n"
+                f"MD5 Hash: `{item['md5_hash']}`\n"
+                "Endpoints:\n"
+                "```"
+            )
+            formatted_message += "\n".join(item['endpoints'])
+            formatted_message += "```"
+            
+            payload = {"text": formatted_message}
+            response = requests.post(webhook_url, headers=headers, data=json.dumps(payload))
+            
+            if response.status_code == 200:
+                pass
+                #print(f"Updated message for {item['input']} posted successfully!")
+            else:
+                pass
+                #print(f"Failed to post updated message for {item['input']}. Status Code: {response.status_code}, Response: {response.text}")
+
 
 def main():
-    print_js_banner()
-    create_db_with_data()
-
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Extract JS links from a URL or a list of URLs")
     parser.add_argument('-i', '--input', required=False, help="URL or file containing URLs")
+    parser.add_argument('-db', '--from_db', action='store_true', required=False, help="consume input from db, past results")
     parser.add_argument('-f', '--server', required=False, help="Provide output to launch web server")
     parser.add_argument('-o', '--output', help="Output JSON file to save results (optional, prints to CLI if not specified)")
     parser.add_argument('-v', '--verbose', action='store_true', help="Enable verbose logging")
@@ -695,21 +770,35 @@ def main():
     parser.add_argument('-s', '--secrets_file', action='append', help="Add your secrets.regex file containing compatible secrets file")
     parser.add_argument('-sjs', '--save_js', help="Save JS files to specific location.")
     parser.add_argument('-store', '--save_db', action='store_true', default=True, help="Save contents to database in ~/.everythingjs/scan_results.db")
-    parser.add_argument('-m', '--monitor', default='2s', help="Monitor the process at specified intervals (e.g., 2s, 2m, 1d, 4w)")
+    parser.add_argument('-m', '--monitor', help="Monitor the process at specified intervals (e.g., 2s, 2m, 1d, 4w)")
+    parser.add_argument('-slack', '--slack_webhook', help="Pass the slack webhook url where you want to post the message updates")
+    parser.add_argument('-j', '--jsonl', action='store_true', help="print output in jsonl format in stdout")
+    parser.add_argument('-silent', '--silent', action='store_true', help="dont print anything except output")
     
     args = parser.parse_args()
+
+    if not args.silent:
+        print_js_banner()
+    create_db_with_data()
 
     if args.server:
         filename = args.server
         run_flask_app(filename)
         exit(0)
     
-    if not args.input:
+    if args.input or args.from_db:
+        pass
+    else:
         print("[+] args required, run `everythingjs -h`")
         exit(0)
 
     # Load URLs from input
-    urls = load_urls(args.input)
+    if args.from_db:
+        urls = get_distinct_inputs()
+    elif args.input:
+        urls = load_urls(args.input)
+    else:
+        print("[+] args required, run `everythingjs -h`")
     if args.verbose:
         print(f"Loaded {len(urls)} URL(s) from input.")
     
@@ -719,32 +808,50 @@ def main():
         print(f"[+] Running in verbose mode")
 
     # Process URLs and extract JS links
-    results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, args.save_db, verbose=args.verbose)
+    results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose)
+    if args.slack_webhook:
+        post_to_slack(args.slack_webhook, changed_results)
+    elif args.jsonl:
+        for item in changed_results['updated']:
+            print(json.dumps(item))
+        for item in changed_results['inserted']:
+            print(json.dumps(item))
+    else:
+        post_to_ui(changed_results)
 
     # If output file is specified, write results to it; otherwise, print to CLI
-    if args.output:
+    if args.output and not args.monitor:
         with open(args.output, 'w') as out_file:
             json.dump(results, out_file, indent=2)
         if args.verbose:
             print(f"Results saved to {args.output}")
     else:
-        print(json.dumps(results, indent=2))
+        pass
 
-    # Monitor process in loop if --monitor flag is set
-    if args.monitor:
+    # Process URLs based on the --monitor flag
+    
+    if args.monitor is not None:
+        print(f"Monitoring javascript changes every {args.monitor}")
         interval = parse_interval(args.monitor)
+        print(f"Monitoring {len(urls)} urls")
         while True:
             time.sleep(interval)
             if args.verbose:
                 print(f"Re-running process after {args.monitor}...")
-            results = process_urls(urls, headers, args.secrets_file, args.save_js, args.save_db, verbose=args.verbose)
+            results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose)
+            if args.slack_webhook:
+                post_to_slack(args.slack_webhook, changed_results)
+            else:
+                post_to_ui(changed_results)
             if args.output:
                 with open(args.output, 'w') as out_file:
                     json.dump(results, out_file, indent=2)
                 if args.verbose:
                     print(f"Results saved to {args.output}")
             else:
-                print(json.dumps(results, indent=2))
+                pass
+                #print(json.dumps(results, indent=2))
+
 
 def parse_interval(interval):
     """Parse the interval string and return the time in seconds."""
