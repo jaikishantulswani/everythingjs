@@ -108,6 +108,12 @@ everythingjs -i urls.txt -sjs ./saved_js
 ```bash
 everythingjs -f output.json
 ```
+#### WEB UI showing api endpoints, secrets, links, dom sinks, JS search.
+<img width="1321" alt="image" src="https://github.com/user-attachments/assets/afa5b993-ccbf-476a-af98-ce5290bddd02" />
+
+#### search through the beautified JS files (works only if -sjs is used when running command)
+<img width="1318" alt="image" src="https://github.com/user-attachments/assets/59e59ae1-273b-4ef8-920e-dfe4f7c6a653" />
+
 
 #### 8. Monitoring JS files for changes on a given input and send udpates to slack
 ```bash
