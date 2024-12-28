@@ -3,7 +3,9 @@
 
 ## Overview
 
-**EverythingJS** is a CLI tool for extracting JavaScript links from URLs or web pages, applying custom regex patterns to those JS files, and organizing the results in a structured JSON format. It’s designed for efficiency, with features like multi-threading, filtering irrelevant links, and customizable headers.
+**EverythingJS** is a versatile CLI tool designed to extract JavaScript links from URLs or web pages, apply custom regex patterns to these files, and organize the results in a structured, easy-to-use JSON format. It is built for efficiency, with multi-threading support, the ability to filter irrelevant links, and customizable HTTP headers for requests. The tool also provides flexibility in saving results, whether in a JSON file, a database, or by monitoring JS files for changes.
+
+
 
 ## Installation
 
@@ -15,13 +17,19 @@ pip install everythingjs
 
 ## Features
 
-- Extracts JavaScript links from a URL or a list of URLs.
-- Converts relative links to absolute URLs.
-- Applies a regex pattern to each JavaScript file, extracting relevant matches.
-- Filters irrelevant JavaScript links using a predefined `nopelist`.
-- Supports custom headers for HTTP requests.
-- Outputs results in JSON format, tagged to respective JS links.
-- Multi-threaded for fast processing.
+- Extract JavaScript links from a URL or a list of URLs using the `-i` flag.
+- Automatically convert relative links into absolute URLs.
+- Apply user-defined regex patterns to extract relevant matches from each JavaScript file with the `-s` flag.
+- Filter out unwanted JS links using a predefined "nopelist" file.
+- Add custom headers for HTTP requests using the `-H` flag to handle server configurations or bypass restrictions.
+- Structure the results in a clean JSON format, categorizing JavaScript links and their associated regex matches, with the `-o` flag to save them.
+- Speed up processing by running tasks concurrently for multiple URLs using multi-threading.
+- Save the extracted JavaScript links and matches to a JSON file or database using the `-o` or `-store` flags.
+- Launch a simple web server to view and navigate through the extracted results using the `-f` flag.
+- Send updates on the process to a Slack channel via a webhook with the `-slack` flag.
+- Optionally save the JavaScript files locally for further analysis using the `-sjs` flag.
+- Monitor JS files for changes and trigger actions like Slack notifications or updates to the database using the `-m` flag.
+
 
 ## Usage
 
