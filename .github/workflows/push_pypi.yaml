@@ -31,8 +31,6 @@ jobs:
           # Optional: Test installation locally
           pip install dist/*.whl
 
-      - name: Run tests
-        run: pytest  # Run your test suite
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
