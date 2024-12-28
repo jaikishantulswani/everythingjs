@@ -5,6 +5,7 @@
 
 **EverythingJS** is a versatile CLI tool designed to extract JavaScript links from URLs or web pages, apply custom regex patterns to these files, and organize the results in a structured, easy-to-use JSON format. It is built for efficiency, with multi-threading support, the ability to filter irrelevant links, and customizable HTTP headers for requests. The tool also provides flexibility in saving results, whether in a JSON file, a database, or by monitoring JS files for changes.
 
+<img width="1422" alt="image" src="https://github.com/user-attachments/assets/78d43c75-ea8b-492a-9317-8e4f5cb33ac7" />
 
 
 ## Installation
