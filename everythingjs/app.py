@@ -20,6 +20,7 @@ from datetime import datetime
 import sqlite3
 from flask import Flask, render_template
 from flask_socketio import SocketIO
+import urllib
 
 # Define the list of keywords to ignore
 # Define the list of keywords to ignore
@@ -76,6 +77,27 @@ def find_matches(content):
         all_matches[key] = matches
 
     return all_matches
+
+
+def download_regex():
+    # Define the directory and file path
+    everythingjs_dir = os.path.expanduser('~/.everythingjs/')
+    secrets_file_path = os.path.join(everythingjs_dir, 'secrets.regex')
+
+    # Create the directory if it doesn't exist
+    os.makedirs(everythingjs_dir, exist_ok=True)
+
+    # URL to the secrets.regex file
+    secrets_url = 'https://raw.githubusercontent.com/profmoriarity/everythingjs/refs/heads/main/secrets.regex'
+
+    # Download the file
+    try:
+        print(f"Downloading {secrets_url} to {secrets_file_path}...")
+        urllib.request.urlretrieve(secrets_url, secrets_file_path)
+        print(f"File saved to {secrets_file_path}")
+    except Exception as e:
+        print(f"Failed to download the file: {e}")
+
 
 def find_xss_sinks(js_content):
     """Find potential XSS sinks in minified JavaScript content with line numbers."""
@@ -804,6 +826,16 @@ def main():
     if not args.silent:
         print_js_banner()
     create_db_with_data()
+
+    try:
+        if args.verbose and args.debug:
+            print("[+] trying to download secrets.regex from github.")
+        download_regex()
+        if args.verbose and args.debug:
+            print("[+] downloading regex file completed.")
+    except:
+        if args.verbose and args.debug:
+            print("[+] failed to download the regex file.")
 
     if args.server:
         filename = args.server
