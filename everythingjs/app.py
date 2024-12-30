@@ -9,6 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 import argparse
 from urllib.parse import urlparse, urlunparse
 import threading
+import signal
+import sys
 from tqdm import tqdm
 import jsbeautifier
 import traceback
@@ -43,6 +45,12 @@ nopelist = [
     "application/ld+json", "text/javascript", "application/x-www-form-urlencoded", ".dtd", "google.com", "application/javascript", "text/css", "w3.org", "www.thymeleaf.org", "application/javascrip", "toastr.min.js", "spin.min.js" "./" ,"DD/MM/YYYY"
 ]
 
+
+def graceful_exit(signal_received, frame):
+    print("\nCtrl+C detected. Exiting gracefully...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, graceful_exit)
 
 
 links_regex = "\b(?:https?|wss?):\/\/(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?|\b(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)\b"
@@ -231,20 +239,24 @@ def apply_regex_patterns_to_text(file_path, text_data):
 
     def apply_pattern(entry):
         nonlocal matches
-        name = entry.get("name")
-        regex = entry.get("regex")
+        try:
+            name = entry.get("name")
+            regex = entry.get("regex")
 
-        # Only apply valid patterns
-        if validate_regex(regex):
-            compiled_regex = re.compile(regex)
-            matches_found = compiled_regex.findall(text_data)
-            if matches_found:
-                joined_matches = " ".join(
-                    " ".join(match) if isinstance(match, tuple) else match
-                    for match in matches_found
-                )
-                with lock:
-                    matches.append({"name": name, "matches": joined_matches})
+            # Only apply valid patterns
+            if validate_regex(regex):
+                compiled_regex = re.compile(regex)
+                matches_found = compiled_regex.findall(text_data)
+                if matches_found:
+                    joined_matches = " ".join(
+                        " ".join(match) if isinstance(match, tuple) else match
+                        for match in matches_found
+                    )
+                    with lock:
+                        matches.append({"name": name, "matches": joined_matches})
+        except Exception as e:
+            # Log the error and continue
+            print(f"Error processing pattern {entry.get('name')}: {e}")
 
     threads = []
     for entry in patterns:
@@ -390,7 +402,9 @@ def fetch_js_and_apply_regex(js_url, headers, save_js, secrets_file):
     if secrets_file:
         file_path_secrets = secrets_file[0]
     else:
-        file_path_secrets = "secrets.regex"
+        home_dir = os.path.expanduser("~")
+        folder_path = os.path.join(home_dir, ".everythingjs")
+        file_path_secrets = folder_path + "/secrets.regex"
 
     try:
         # Download the JS file to a temporary location
@@ -582,50 +596,26 @@ def process_scan_results(data_list):
 
     return {"inserted": inserted_items, "updated": updated_items}
 
-
-def process_urls(urls, headers, secrets_file, save_js, save_db, verbose=False):
+def process_urls(urls, headers, secrets_file, save_js, save_db, verbose=False, jsonl=False, debug=False):
     results = []
     with ThreadPoolExecutor() as executor:
-        # Submit tasks and store futures
         futures = {executor.submit(fetch_js_links, url, headers): url for url in urls}
-        
-        if verbose:
-            # Create a progress bar for processing URLs
-            for future in tqdm(futures.keys(), desc="Processing URLs", total=len(futures)):
-                result = future.result()  # Call result() on the future object
-                if result:
-                    url, js_links = result
-
-                    # For each JS link, fetch and apply regex
-                    for js_link in js_links:
-                        regex_matches = fetch_js_and_apply_regex(js_link, headers, save_js, secrets_file)
-                        if regex_matches:
-                            results.append({
-                                "input": url,
-                                "jslink": js_link,
-                                "endpoints": regex_matches
-                            })
-                    
-                    #print(f"Processed: {url} - Found {len(js_links)} JS links and {len(results)} links with matches.")
-        else:
-            # If verbose is False, just process the URLs without a progress bar
-            for future in futures:
-                result = future.result()  # Call result() on the future object
-                if result:
-                    url, js_links = result
-
-                    # For each JS link, fetch and apply regex
-                    for js_link in js_links:
-                        regex_matches = fetch_js_and_apply_regex(js_link, headers, save_js, secrets_file)
-                        if regex_matches:
-                            results.append({
-                                "input": url,
-                                "jslink": js_link,
-                                "endpoints": regex_matches
-                            })
-        if save_db:
-            #print("upserting data...")
-            changes_results = process_scan_results(results)
+        for future in futures:
+            result = future.result()
+            if result:
+                url, js_links = result
+                for js_link in js_links:
+                    regex_matches = fetch_js_and_apply_regex(js_link, headers, save_js, secrets_file)
+                    if regex_matches:
+                        temp = {"input": url, "jslink": js_link, "endpoints": regex_matches}
+                        if jsonl: 
+                            print(json.dumps(temp))
+                        else:
+                            print_human_readable(temp)
+                        results.append(temp)
+                if verbose and debug:
+                    print(f"[+] Processed: {url} - Found {len(js_links)} JS links and {len(results)} links with matches.")
+    changes_results = process_scan_results(results) if save_db else None
     return results, changes_results
 
 def load_urls(input_source):
@@ -666,6 +656,42 @@ def print_js_banner():
     print(tagline)
     print(x_handle)
 
+
+def print_human_readable(data):
+    if data.get("input"):
+        print("Input URL:", data.get("input"))
+    if data.get("jslink"):
+        print("JS Link:", data.get("jslink"))
+    endpoints = data.get("endpoints", {})
+    if endpoints.get("endpoints"):
+        print("\nEndpoints:")
+        for endpoint in endpoints.get("endpoints", []):
+            print("  -", endpoint)
+    if endpoints.get("secrets"):
+        print("\nSecrets:")
+        for secret in endpoints.get("secrets", []):
+            print(f"  - {secret.get('name')}: {secret.get('matches')}")
+    if endpoints.get("links"):
+        print("\nLinks:")
+        for key, links in endpoints.get("links", {}).items():
+            if links:
+                print(f"  {key.capitalize()}:")
+                for link in links:
+                    print("    -", link)
+    if endpoints.get("mapping"):
+        print("\nMapping:", endpoints.get("mapping"))
+    if endpoints.get("dom_sinks"):
+        print("DOM Sinks:", endpoints.get("dom_sinks"))
+    if endpoints.get("js_url"):
+        print("JS URL:", endpoints.get("js_url"))
+    if endpoints.get("md5_hash"):
+        print("MD5 Hash:", endpoints.get("md5_hash"))
+    if endpoints.get("timestamp"):
+        print("Timestamp:", endpoints.get("timestamp"))
+    print("=" * 50)
+
+
+
 def post_to_ui(message_dict):
     # Check if both 'inserted' and 'updated' are empty
     if not message_dict['inserted'] and not message_dict['updated']:
@@ -699,9 +725,6 @@ def post_to_ui(message_dict):
         print("\n" + "="*50)
         print(formatted_message)
         print("="*50 + "\n")
-
-import json
-import requests
 
 def post_to_slack(webhook_url, message_dict):
     # Check if both 'inserted' and 'updated' are empty
@@ -774,6 +797,7 @@ def main():
     parser.add_argument('-slack', '--slack_webhook', help="Pass the slack webhook url where you want to post the message updates")
     parser.add_argument('-j', '--jsonl', action='store_true', help="print output in jsonl format in stdout")
     parser.add_argument('-silent', '--silent', action='store_true', help="dont print anything except output")
+    parser.add_argument('-debug', '--debug', action='store_true', help="debug mode allows you view much more details happening in background.")
     
     args = parser.parse_args()
 
@@ -808,7 +832,7 @@ def main():
         print(f"[+] Running in verbose mode")
 
     # Process URLs and extract JS links
-    results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose)
+    results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose, jsonl=args.jsonl, debug=args.debug)
     if args.slack_webhook:
         post_to_slack(args.slack_webhook, changed_results)
     elif args.jsonl:
@@ -816,7 +840,7 @@ def main():
             print(json.dumps(item))
         for item in changed_results['inserted']:
             print(json.dumps(item))
-    else:
+    if args.debug:
         post_to_ui(changed_results)
 
     # If output file is specified, write results to it; otherwise, print to CLI
@@ -838,7 +862,7 @@ def main():
             time.sleep(interval)
             if args.verbose:
                 print(f"Re-running process after {args.monitor}...")
-            results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose)
+            results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose, jsonl=args.jsonl, debug=args.debug)
             if args.slack_webhook:
                 post_to_slack(args.slack_webhook, changed_results)
             else:
@@ -865,4 +889,9 @@ def parse_interval(interval):
     return value * time_units[unit]
 
 if __name__ == "__main__":
-    main()
+    try:
+        while True:
+            main()
+    except KeyboardInterrupt:
+        # Optional: You can handle it here, but it's already covered by the signal handler
+        pass

@@ -153,6 +153,11 @@ everythingjs -db jsonl
 ```
 - Domains without JavaScript links are excluded from the output.
 
+
+## Credits
+- Borrowed templates from ProjectDiscovery nuclei templates (to all those who contributed to them)
+- @GerbenJavado for inspring with Linkfinder and Regex expressions
+
 ## License
 
 MIT License
