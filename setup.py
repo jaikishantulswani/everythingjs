@@ -29,7 +29,7 @@ class PostInstallCommand(install):
 
 setup(
     name='everythingjs',
-    version='0.2.4',  # Incremented version for updates
+    version='0.2.5',  # Incremented version for updates
     author='Siva Krishna',
     author_email='krishna.krish759213@gmail.com',
     description='A Python module for working seamlessly with JavaScript files.',
