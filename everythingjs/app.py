@@ -5,7 +5,7 @@ import re
 import tempfile
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import argparse
 from urllib.parse import urlparse, urlunparse
 import threading
@@ -54,13 +54,14 @@ def graceful_exit(signal_received, frame):
 signal.signal(signal.SIGINT, graceful_exit)
 
 
-links_regex = "\b(?:https?|wss?):\/\/(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?|\b(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)\b"
+links_regex = "\b(?:https?|wss?):\/\/(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?|\b(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)\b"
 links_regex = r"https?://(?:s3\.amazonaws\.com|storage\.googleapis\.com|blob\.core\.windows\.net|cdn\.cloudfront\.net)[\\w\\-\\./]*"
 links_regex = {
     "s3": r"https?://(?:[\w\-]+\.)?s3(?:[\.-][\w\-]+)?\.amazonaws\.com[\w\-\./]*",
     "gcs": r"https?://(?:[\w\-]+\.)?storage\.googleapis\.com[\w\-\./]*",
     "azure_blob": r"https?://[\w\-]+\.blob\.core\.windows\.net[\w\-\./]*",
-    "cloudfront": r"https?://[\w\-]+\.cloudfront\.net[\w\-\./]*"
+    "cloudfront": r"https?://[\w\-]+\.cloudfront\.net[\w\-\./]*",
+    "r2_cloudflare": r"https?://(?:[\w\-]+\.)?r2\.cloudflarestorage\.com/[\w\-\./]*"
 }
 
 def find_matches(content):
@@ -68,7 +69,8 @@ def find_matches(content):
         "s3": r"https?://(?:[\w\-]+\.)?s3(?:[\.-][\w\-]+)?\.amazonaws\.com[\w\-\./]*",
         "gcs": r"https?://(?:[\w\-]+\.)?storage\.googleapis\.com[\w\-\./]*",
         "azure_blob": r"https?://[\w\-]+\.blob\.core\.windows\.net[\w\-\./]*",
-        "cloudfront": r"https?://[\w\-]+\.cloudfront\.net[\w\-\./]*"
+        "cloudfront": r"https?://[\w\-]+\.cloudfront\.net[\w\-\./]*",
+        "r2_cloudflare": r"https?://(?:[\w\-]+\.)?r2\.cloudflarestorage\.com/[\w\-\./]*"
     }
 
     all_matches = {}
@@ -216,11 +218,30 @@ def fetch_js_links(url, headers):
         response = requests.get(url, headers=headers, timeout=3)
         response.raise_for_status()
         
+        # Check Content-Type header
+        content_type = response.headers.get('Content-Type', '').lower()
+        
+        # Only parse as HTML if content type is HTML or if not specified
+        if not ('text/html' in content_type or 'application/xhtml+xml' in content_type):
+            if 'application/javascript' in content_type or 'text/javascript' in content_type:
+                # If it's a JS file, return it directly as a single JS link
+                return (url, [url]) if not is_nopelist(url) else None
+            return None
+        
         # Explicitly checking if content is non-empty before parsing
-        if response.text.strip():
-            soup = BeautifulSoup(response.text, 'html.parser')
-        else:
-            return None  # Return None if the response body is empty
+        if not response.text.strip():
+            return None
+            
+        try:
+            # Use html5lib parser which is more lenient
+            soup = BeautifulSoup(response.text, 'html5lib')
+        except:
+            # Fallback to html.parser if html5lib fails
+            try:
+                soup = BeautifulSoup(response.text, 'html.parser')
+            except Exception as e:
+                print(f"Failed to parse HTML from {url}: {e}")
+                return None
 
         js_links = set()
         
@@ -236,10 +257,9 @@ def fetch_js_links(url, headers):
         
         # Return only if there are JS links found
         return (url, list(js_links)) if js_links else None
+        
     except requests.RequestException as e:
-        #print(f"Error fetching URL {url}: {e}")
         return None
-
 
 # Load regex patterns from secrets.regex file
 def load_regex_patterns(file_path):
@@ -618,34 +638,65 @@ def process_scan_results(data_list):
 
     return {"inserted": inserted_items, "updated": updated_items}
 
-def process_urls(urls, headers, secrets_file, save_js, save_db, verbose=False, jsonl=False, debug=False):
+def process_url_batch(urls, headers, secrets_file, save_js, save_db, verbose=False, jsonl=False, debug=False):
+    """Process a batch of URLs concurrently."""
     results = []
     with ThreadPoolExecutor() as executor:
-        futures = {executor.submit(fetch_js_links, url, headers): url for url in urls}
-        for future in futures:
-            result = future.result()
-            if result:
-                url, js_links = result
-                for js_link in js_links:
-                    regex_matches = fetch_js_and_apply_regex(js_link, headers, save_js, secrets_file)
-                    if regex_matches:
-                        temp = {"input": url, "jslink": js_link, "endpoints": regex_matches}
-                        if jsonl: 
-                            print(json.dumps(temp))
-                        else:
-                            print_human_readable(temp)
-                        results.append(temp)
+        # First, fetch JS links for all URLs
+        js_futures = {executor.submit(fetch_js_links, url, headers): url for url in urls}
+        
+        # Process JS links as they complete
+        for future in as_completed(js_futures):
+            url = js_futures[future]
+            try:
+                result = future.result()
+                if result:
+                    _, js_links = result
+                    # Process each JS link for the URL
+                    js_futures_inner = {executor.submit(fetch_js_and_apply_regex, js_link, headers, save_js, secrets_file): js_link for js_link in js_links}
+                    
+                    for js_future in as_completed(js_futures_inner):
+                        try:
+                            js_link = js_futures_inner[js_future]
+                            regex_matches = js_future.result()
+                            if regex_matches:
+                                temp = {"input": url, "jslink": js_link, "endpoints": regex_matches}
+                                if jsonl:
+                                    print(json.dumps(temp))
+                                else:
+                                    print_human_readable(temp)
+                                results.append(temp)
+                        except Exception as e:
+                            if verbose and debug:
+                                print(f"Error processing JS link {js_link}: {str(e)}")
+                            continue
+                    
+                    if verbose and debug:
+                        print(f"[+] Processed: {url} - Found {len(js_links)} JS links and {len(results)} links with matches.")
+            except Exception as e:
                 if verbose and debug:
-                    print(f"[+] Processed: {url} - Found {len(js_links)} JS links and {len(results)} links with matches.")
+                    print(f"Error processing URL {url}: {str(e)}")
+                continue
+    
     changes_results = process_scan_results(results) if save_db else None
     return results, changes_results
 
-def load_urls(input_source):
-    if input_source.startswith("http://") or input_source.startswith("https://"):
-        return [input_source]
-    else:
-        with open(input_source, 'r') as file:
-            return [line.strip() for line in file.readlines()]
+def process_urls_with_concurrency(urls, headers, secrets_file, save_js, save_db, concurrency=5, verbose=False, jsonl=False, debug=False):
+    """Process URLs with specified concurrency level."""
+    all_results = []
+    all_changes = {"inserted": [], "updated": []}
+
+    # Split URLs into batches based on concurrency
+    url_batches = [urls[i:i + concurrency] for i in range(0, len(urls), concurrency)]
+
+    for batch in url_batches:
+        results, changes = process_url_batch(batch, headers, secrets_file, save_js, save_db, verbose, jsonl, debug)
+        all_results.extend(results)
+        if changes:
+            all_changes["inserted"].extend(changes["inserted"])
+            all_changes["updated"].extend(changes["updated"])
+
+    return all_results, all_changes
 
 def parse_headers(header_list):
     headers = {
@@ -802,7 +853,6 @@ def post_to_slack(webhook_url, message_dict):
                 pass
                 #print(f"Failed to post updated message for {item['input']}. Status Code: {response.status_code}, Response: {response.text}")
 
-
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Extract JS links from a URL or a list of URLs")
@@ -820,7 +870,8 @@ def main():
     parser.add_argument('-j', '--jsonl', action='store_true', help="print output in jsonl format in stdout")
     parser.add_argument('-silent', '--silent', action='store_true', help="dont print anything except output")
     parser.add_argument('-debug', '--debug', action='store_true', help="debug mode allows you view much more details happening in background.")
-    
+    parser.add_argument('-c', '--concurrency', type=int, default=5, help="Number of URLs to process concurrently (default: 5)")
+
     args = parser.parse_args()
 
     if not args.silent:
@@ -857,14 +908,25 @@ def main():
         print("[+] args required, run `everythingjs -h`")
     if args.verbose:
         print(f"Loaded {len(urls)} URL(s) from input.")
+        if args.concurrency:
+            print(f"Processing with concurrency level: {args.concurrency}")
     
     # Parse custom headers, including defaults
     headers = parse_headers(args.header if args.header else [])
-    if args.verbose:
-        print(f"[+] Running in verbose mode")
 
-    # Process URLs and extract JS links
-    results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose, jsonl=args.jsonl, debug=args.debug)
+    # Process URLs with concurrency
+    results, changed_results = process_urls_with_concurrency(
+        urls, 
+        headers, 
+        args.secrets_file, 
+        args.save_js, 
+        True,
+        args.concurrency,
+        verbose=args.verbose, 
+        jsonl=args.jsonl, 
+        debug=args.debug
+    )
+
     if args.slack_webhook:
         post_to_slack(args.slack_webhook, changed_results)
     elif args.jsonl:
@@ -875,12 +937,43 @@ def main():
     if args.debug:
         post_to_ui(changed_results)
 
-    # If output file is specified, write results to it; otherwise, print to CLI
+    # If output file is specified, write results to it
     if args.output and not args.monitor:
         with open(args.output, 'w') as out_file:
             json.dump(results, out_file, indent=2)
         if args.verbose:
             print(f"Results saved to {args.output}")
+
+    # Process URLs based on the --monitor flag
+    if args.monitor is not None:
+        print(f"Monitoring javascript changes every {args.monitor}")
+        interval = parse_interval(args.monitor)
+        print(f"Monitoring {len(urls)} urls")
+        while True:
+            time.sleep(interval)
+            if args.verbose:
+                print(f"Re-running process after {args.monitor}...")
+            results, changed_results = process_urls_with_concurrency(
+                urls, 
+                headers, 
+                args.secrets_file, 
+                args.save_js, 
+                True,
+                args.concurrency,
+                verbose=args.verbose, 
+                jsonl=args.jsonl, 
+                debug=args.debug
+            )
+            if args.slack_webhook:
+                post_to_slack(args.slack_webhook, changed_results)
+            else:
+                post_to_ui(changed_results)
+            if args.output:
+                with open(args.output, 'w') as out_file:
+                    json.dump(results, out_file, indent=2)
+                if args.verbose:
+                    print(f"Results saved to {args.output}")
+
     else:
         pass
 
@@ -919,6 +1012,24 @@ def parse_interval(interval):
     
     value = int(interval[:-1])
     return value * time_units[unit]
+
+def load_urls(input_source):
+    if input_source.startswith("http://") or input_source.startswith("https://"):
+        return [input_source]
+    else:
+        try:
+            with open(input_source, 'r') as file:
+                # Strip whitespace and filter out empty lines
+                urls = [line.strip() for line in file.readlines() if line.strip()]
+                # Only return URLs that start with http:// or https://
+                valid_urls = [url for url in urls if url.startswith(("http://", "https://"))]
+                return valid_urls
+        except FileNotFoundError:
+            print(f"Error: File {input_source} not found.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error reading file {input_source}: {str(e)}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     try:
