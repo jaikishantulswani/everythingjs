@@ -53,8 +53,7 @@ def graceful_exit(signal_received, frame):
 
 signal.signal(signal.SIGINT, graceful_exit)
 
-
-links_regex = "\b(?:https?|wss?):\/\/(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?|\b(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|in|dev|xyz|tech|ai|me)\b"
+links_regex = r"\b(?:https?|wss?):\/\/(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|dev|xyz|tech|ai|me)(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?|\b(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|dev|xyz|tech|ai|me)\b"
 links_regex = r"https?://(?:s3\.amazonaws\.com|storage\.googleapis\.com|blob\.core\.windows\.net|cdn\.cloudfront\.net)[\\w\\-\\./]*"
 links_regex = {
     "s3": r"https?://(?:[\w\-]+\.)?s3(?:[\.-][\w\-]+)?\.amazonaws\.com[\w\-\./]*",
