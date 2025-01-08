@@ -890,7 +890,7 @@ def main():
     parser.add_argument('-silent', '--silent', action='store_true', help="dont print anything except output")
     parser.add_argument('-debug', '--debug', action='store_true', help="debug mode allows you view much more details happening in background.")
     parser.add_argument('-c', '--concurrency', type=int, default=5, help="Number of URLs to process concurrently (default: 5)")
-    parser.add_argument('-rl', '--rate_limit', type=int, default=10, help="Rate limit in requests per second (default: 10)")  # New argument
+    parser.add_argument('-rl', '--rate_limit', type=int, default=10, help="Rate limit in requests per second (default: 10)")
 
     args = parser.parse_args()
 
@@ -912,7 +912,7 @@ def main():
         filename = args.server
         run_flask_app(filename)
         exit(0)
-    
+
     if args.input or args.from_db:
         pass
     else:
@@ -926,24 +926,26 @@ def main():
         urls = load_urls(args.input)
     else:
         print("[+] args required, run `everythingjs -h`")
+        return args  # Return early if no valid input
+
     if args.verbose:
         print(f"Loaded {len(urls)} URL(s) from input.")
         if args.concurrency:
             print(f"Processing with concurrency level: {args.concurrency}")
-    
+
     # Parse custom headers, including defaults
     headers = parse_headers(args.header if args.header else [])
 
     # Process URLs with concurrency
     results, changed_results = process_urls_with_concurrency(
-            urls, 
-            headers, 
-            args.secrets_file, 
-            args.save_js, 
+            urls,
+            headers,
+            args.secrets_file,
+            args.save_js,
             True,
             args.concurrency,
-            verbose=args.verbose, 
-            jsonl=args.jsonl, 
+            verbose=args.verbose,
+            jsonl=args.jsonl,
             debug=args.debug
             )
 
@@ -964,7 +966,6 @@ def main():
         if args.verbose:
             print(f"Results saved to {args.output}")
 
-    # Process URLs based on the --monitor flag
     if args.monitor is not None:
         print(f"Monitoring javascript changes every {args.monitor}")
         interval = parse_interval(args.monitor)
@@ -974,14 +975,14 @@ def main():
             if args.verbose:
                 print(f"Re-running process after {args.monitor}...")
             results, changed_results = process_urls_with_concurrency(
-                    urls, 
-                    headers, 
-                    args.secrets_file, 
-                    args.save_js, 
+                    urls,
+                    headers,
+                    args.secrets_file,
+                    args.save_js,
                     True,
                     args.concurrency,
-                    verbose=args.verbose, 
-                    jsonl=args.jsonl, 
+                    verbose=args.verbose,
+                    jsonl=args.jsonl,
                     debug=args.debug
                     )
             if args.slack_webhook:
@@ -994,33 +995,7 @@ def main():
                 if args.verbose:
                     print(f"Results saved to {args.output}")
 
-    else:
-        pass
-
-    # Process URLs based on the --monitor flag
-
-    if args.monitor is not None:
-        print(f"Monitoring javascript changes every {args.monitor}")
-        interval = parse_interval(args.monitor)
-        print(f"Monitoring {len(urls)} urls")
-        while True:
-            time.sleep(interval)
-            if args.verbose:
-                print(f"Re-running process after {args.monitor}...")
-            results, changed_results = process_urls(urls, headers, args.secrets_file, args.save_js, True, verbose=args.verbose, jsonl=args.jsonl, debug=args.debug)
-            if args.slack_webhook:
-                post_to_slack(args.slack_webhook, changed_results)
-            else:
-                post_to_ui(changed_results)
-            if args.output:
-                with open(args.output, 'w') as out_file:
-                    json.dump(results, out_file, indent=2)
-                if args.verbose:
-                    print(f"Results saved to {args.output}")
-            else:
-                pass
-            #print(json.dumps(results, indent=2))
-
+    return args
 
 def parse_interval(interval):
     """Parse the interval string and return the time in seconds."""
@@ -1053,8 +1028,10 @@ def load_urls(input_source):
 
 if __name__ == "__main__":
     try:
-        while True:
-            main()
+        args = main()  # main() returns None
+        if args.monitor is not None:  # This fails because args is None
+            while True:
+                main()
+                time.sleep(parse_interval(args.monitor))
     except KeyboardInterrupt:
-        # Optional: You can handle it here, but it's already covered by the signal handler
         pass
