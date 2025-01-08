@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import requests
 import re
@@ -25,26 +26,26 @@ import urllib
 # Define the list of keywords to ignore
 # Define the list of keywords to ignore
 nopelist = [
-    "node_modules", "jquery", "bootstrap", "react", "vue", "angular", "favicon.ico", "logo", "style.css", 
-    "font-awesome", "materialize", "semantic-ui", "tailwindcss", "bulma", "d3", "chart.js", "three.js", 
-    "vuex", "express", "axios", "jquery.min.js", "moment.js", "underscore", "lodash", "jquery-ui", 
-    "angular.min.js", "react-dom", "redux", "chartist.js", "anime.min.js", "highcharts", "leaflet", 
-    "pdf.js", "fullcalendar", "webfontloader", "swiper", "slick.js", "datatables", "webfonts", "react-scripts", 
-    "vue-router", "vite", "webpack", "electron", "socket.io", "codemirror", "angularjs", "firebase", "swagger", 
-    "typescript", "p5.js", "ckeditor", "codemirror.js", "recharts", "bluebird", "lodash.min.js", "sweetalert2", 
-    "polyfils", "runtime", "bootstrap", "google-analytics", 
-    "application/json", "application/x-www-form-urlencoded", "json2.js", "querystring", "axios.min.js", 
-    "ajax", "formdata", "jsonschema", "jsonlint", "json5", "csrf", "jQuery.ajax", "superagent", 
-    "body-parser", "urlencoded", "csrf-token", "express-session", "content-type", "fetch", "protobuf", 
-    "formidable", "postman", "swagger-ui", "rest-client", "swagger-axios", "graphql", "apollo-client", 
-    "react-query", "jsonapi", "json-patch", "urlencoded-form", "url-search-params", "graphql-tag", 
-    "vue-resource", "graphql-request", "restful-api", "jsonwebtoken", "fetch-jsonp", "reqwest", "lodash-es", 
-    "jsonwebtoken", "graphene", "axios-jsonp", "postman-collection", 
-    "application/xml", "text/xml", "text/html", "text/plain", "multipart/form-data", "image/jpeg", 
-    "image/png", "image/gif", "audio/mpeg", "audio/ogg", "video/mp4", "video/webm", "text/css", 
-    "application/pdf", "application/octet-stream", "image/svg+xml", "application/javascript", 
-    "application/ld+json", "text/javascript", "application/x-www-form-urlencoded", ".dtd", "google.com", "application/javascript", "text/css", "w3.org", "www.thymeleaf.org", "application/javascrip", "toastr.min.js", "spin.min.js" "./" ,"DD/MM/YYYY"
-]
+        "node_modules", "jquery", "bootstrap", "react", "vue", "angular", "favicon.ico", "logo", "style.css", 
+        "font-awesome", "materialize", "semantic-ui", "tailwindcss", "bulma", "d3", "chart.js", "three.js", 
+        "vuex", "express", "axios", "jquery.min.js", "moment.js", "underscore", "lodash", "jquery-ui", 
+        "angular.min.js", "react-dom", "redux", "chartist.js", "anime.min.js", "highcharts", "leaflet", 
+        "pdf.js", "fullcalendar", "webfontloader", "swiper", "slick.js", "datatables", "webfonts", "react-scripts", 
+        "vue-router", "vite", "webpack", "electron", "socket.io", "codemirror", "angularjs", "firebase", "swagger", 
+        "typescript", "p5.js", "ckeditor", "codemirror.js", "recharts", "bluebird", "lodash.min.js", "sweetalert2", 
+        "polyfils", "runtime", "bootstrap", "google-analytics", 
+        "application/json", "application/x-www-form-urlencoded", "json2.js", "querystring", "axios.min.js", 
+        "ajax", "formdata", "jsonschema", "jsonlint", "json5", "csrf", "jQuery.ajax", "superagent", 
+        "body-parser", "urlencoded", "csrf-token", "express-session", "content-type", "fetch", "protobuf", 
+        "formidable", "postman", "swagger-ui", "rest-client", "swagger-axios", "graphql", "apollo-client", 
+        "react-query", "jsonapi", "json-patch", "urlencoded-form", "url-search-params", "graphql-tag", 
+        "vue-resource", "graphql-request", "restful-api", "jsonwebtoken", "fetch-jsonp", "reqwest", "lodash-es", 
+        "jsonwebtoken", "graphene", "axios-jsonp", "postman-collection", 
+        "application/xml", "text/xml", "text/html", "text/plain", "multipart/form-data", "image/jpeg", 
+        "image/png", "image/gif", "audio/mpeg", "audio/ogg", "video/mp4", "video/webm", "text/css", 
+        "application/pdf", "application/octet-stream", "image/svg+xml", "application/javascript", 
+        "application/ld+json", "text/javascript", "application/x-www-form-urlencoded", ".dtd", "google.com", "application/javascript", "text/css", "w3.org", "www.thymeleaf.org", "application/javascrip", "toastr.min.js", "spin.min.js" "./" ,"DD/MM/YYYY"
+        ]
 
 
 def graceful_exit(signal_received, frame):
@@ -53,24 +54,27 @@ def graceful_exit(signal_received, frame):
 
 signal.signal(signal.SIGINT, graceful_exit)
 
-links_regex = r"\b(?:https?|wss?):\/\/(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|dev|xyz|tech|ai|me)(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?|\b(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|dev|xyz|tech|ai|me)\b"
-links_regex = r"https?://(?:s3\.amazonaws\.com|storage\.googleapis\.com|blob\.core\.windows\.net|cdn\.cloudfront\.net)[\\w\\-\\./]*"
-links_regex = {
-    "s3": r"https?://(?:[\w\-]+\.)?s3(?:[\.-][\w\-]+)?\.amazonaws\.com[\w\-\./]*",
-    "gcs": r"https?://(?:[\w\-]+\.)?storage\.googleapis\.com[\w\-\./]*",
-    "azure_blob": r"https?://[\w\-]+\.blob\.core\.windows\.net[\w\-\./]*",
-    "cloudfront": r"https?://[\w\-]+\.cloudfront\.net[\w\-\./]*",
-    "r2_cloudflare": r"https?://(?:[\w\-]+\.)?r2\.cloudflarestorage\.com/[\w\-\./]*"
-}
 
-def find_matches(content):
-    regex_patterns = {
+links_regex = r"\b(?:https?|wss?):\/\/(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|dev|xyz|tech|ai|me)(?::\d+)?(?:\/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?|\b(?:[a-zA-Z0-9-]+\.)+(?:com|co\.in|in|live|org|net|io|gov|edu|info|biz|co|us|uk|dev|xyz|tech|ai|me)\b"
+#links_regex = r"https?://(?:s3\.amazonaws\.com|storage\.googleapis\.com|blob\.core\.windows\.net|cdn\.cloudfront\.net)[\\w\\-\\./]*"
+links_regex = r"https?://(?:s3\.amazonaws\.com|storage\.googleapis\.com|blob\.core\.windows\.net|cdn\.cloudfront\.net|(?:[\w\-]+\.)?r2\.cloudflarestorage\.com/[\w\-\./]*)"
+
+links_regex = {
         "s3": r"https?://(?:[\w\-]+\.)?s3(?:[\.-][\w\-]+)?\.amazonaws\.com[\w\-\./]*",
         "gcs": r"https?://(?:[\w\-]+\.)?storage\.googleapis\.com[\w\-\./]*",
         "azure_blob": r"https?://[\w\-]+\.blob\.core\.windows\.net[\w\-\./]*",
         "cloudfront": r"https?://[\w\-]+\.cloudfront\.net[\w\-\./]*",
         "r2_cloudflare": r"https?://(?:[\w\-]+\.)?r2\.cloudflarestorage\.com/[\w\-\./]*"
-    }
+        }
+
+def find_matches(content):
+    regex_patterns = {
+            "s3": r"https?://(?:[\w\-]+\.)?s3(?:[\.-][\w\-]+)?\.amazonaws\.com[\w\-\./]*",
+            "gcs": r"https?://(?:[\w\-]+\.)?storage\.googleapis\.com[\w\-\./]*",
+            "azure_blob": r"https?://[\w\-]+\.blob\.core\.windows\.net[\w\-\./]*",
+            "cloudfront": r"https?://[\w\-]+\.cloudfront\.net[\w\-\./]*",
+            "r2_cloudflare": r"https?://(?:[\w\-]+\.)?r2\.cloudflarestorage\.com/[\w\-\./]*"
+            }
 
     all_matches = {}
     for key, regex in regex_patterns.items():
@@ -103,9 +107,9 @@ def download_regex():
 def find_xss_sinks(js_content):
     """Find potential XSS sinks in minified JavaScript content with line numbers."""
     xss_sink_pattern = re.compile(
-        r"(?:document\.write|document\.writeln|innerHTML|outerHTML|eval|setTimeout|setInterval|Function|"
-        r"location\.href|location\.assign|location\.replace|window\.open|execCommand)\s*\("
-    )
+            r"(?:document\.write|document\.writeln|innerHTML|outerHTML|eval|setTimeout|setInterval|Function|"
+            r"location\.href|location\.assign|location\.replace|window\.open|execCommand)\s*\("
+            )
 
     lines = js_content.splitlines()
     matches_with_lines = []
@@ -214,23 +218,23 @@ def is_nopelist(js_url):
 
 def fetch_js_links(url, headers):
     try:
-        response = requests.get(url, headers=headers, timeout=3)
+        response = requests.get(url, headers=headers, timeout=5)
         response.raise_for_status()
-        
+
         # Check Content-Type header
         content_type = response.headers.get('Content-Type', '').lower()
-        
+
         # Only parse as HTML if content type is HTML or if not specified
         if not ('text/html' in content_type or 'application/xhtml+xml' in content_type):
             if 'application/javascript' in content_type or 'text/javascript' in content_type:
                 # If it's a JS file, return it directly as a single JS link
                 return (url, [url]) if not is_nopelist(url) else None
             return None
-        
+
         # Explicitly checking if content is non-empty before parsing
         if not response.text.strip():
             return None
-            
+
         try:
             # Use html5lib parser which is more lenient
             soup = BeautifulSoup(response.text, 'html5lib')
@@ -243,7 +247,7 @@ def fetch_js_links(url, headers):
                 return None
 
         js_links = set()
-        
+
         # Extract script tags with src attribute
         for script in soup.find_all('script', src=True):
             js_url = script['src']
@@ -253,10 +257,10 @@ def fetch_js_links(url, headers):
             # Ignore URLs that match any keyword in the nopelist
             if not is_nopelist(full_url):
                 js_links.add(full_url)
-        
+
         # Return only if there are JS links found
         return (url, list(js_links)) if js_links else None
-        
+
     except requests.RequestException as e:
         return None
 
@@ -290,9 +294,9 @@ def apply_regex_patterns_to_text(file_path, text_data):
                 matches_found = compiled_regex.findall(text_data)
                 if matches_found:
                     joined_matches = " ".join(
-                        " ".join(match) if isinstance(match, tuple) else match
-                        for match in matches_found
-                    )
+                            " ".join(match) if isinstance(match, tuple) else match
+                            for match in matches_found
+                            )
                     with lock:
                         matches.append({"name": name, "matches": joined_matches})
         except Exception as e:
@@ -327,13 +331,13 @@ def create_app(interval_seconds=5):
 
     # List of random messages
     messages = [
-        "System is stable.",
-        "Warning: High CPU usage.",
-        "Error: Connection lost.",
-        "Service restarted successfully.",
-        "Alert: Disk space low.",
-        "All systems operational.",
-    ]
+            "System is stable.",
+            "Warning: High CPU usage.",
+            "Error: Connection lost.",
+            "Service restarted successfully.",
+            "Alert: Disk space low.",
+            "All systems operational.",
+            ]
 
     def fetch_distinct_inputs():
         db_path = os.path.join(os.path.expanduser("~"), ".everythingjs", "scan_results.db")
@@ -423,7 +427,7 @@ def run_flask_app(filename):
                     results.append({
                         "filename": js_url,
                         "codesnippet": snippet.strip()
-                    })
+                        })
                     break  # Stop searching in the current file after a match
 
         return jsonify(results)
@@ -449,7 +453,7 @@ def fetch_js_and_apply_regex(js_url, headers, save_js, secrets_file):
 
     try:
         # Download the JS file to a temporary location
-        response = requests.get(js_url, headers=headers, timeout=3)
+        response = requests.get(js_url, headers=headers, timeout=5)
         response.raise_for_status()
 
         # Use temporary file to store the JS content
@@ -477,9 +481,9 @@ def fetch_js_and_apply_regex(js_url, headers, save_js, secrets_file):
                 with open(f"{save_js}/{js_filename}", 'w', encoding='utf-8') as js_file:
                     js_file.write(beautified_js)
                 js_details = {
-                    'js_url': js_url,
-                    'filename': f"{save_js}/{js_filename}"
-                }
+                        'js_url': js_url,
+                        'filename': f"{save_js}/{js_filename}"
+                        }
 
             regex_matches = re.findall(regex_str, beautified_js, re.VERBOSE)
             matches = apply_regex_patterns_to_text(file_path_secrets, js_content)
@@ -494,7 +498,7 @@ def fetch_js_and_apply_regex(js_url, headers, save_js, secrets_file):
         map_url = urlunparse(parsed_url._replace(query="")) + ".map"
         map_status = False
         try:
-            map_response = requests.head(map_url, headers=headers, timeout=3)
+            map_response = requests.head(map_url, headers=headers, timeout=5)
             if map_response.status_code == 200:
                 map_status = True
         except requests.RequestException:
@@ -509,15 +513,15 @@ def fetch_js_and_apply_regex(js_url, headers, save_js, secrets_file):
 
         # Return filtered matches, secrets, links, .map status, MD5 hash, and timestamp
         return {
-            "endpoints": filtered_matches,
-            "secrets": matches,
-            "links": links_matches,
-            "mapping": map_status,
-            "dom_sinks": dom_sinks,
-            "js_url": js_details,
-            "md5_hash": md5_hash,
-            "timestamp": current_timestamp  # Include the timestamp
-        }
+                "endpoints": filtered_matches,
+                "secrets": matches,
+                "links": links_matches,
+                "mapping": map_status,
+                "dom_sinks": dom_sinks,
+                "js_url": js_details,
+                "md5_hash": md5_hash,
+                "timestamp": current_timestamp  # Include the timestamp
+                }
 
     except requests.RequestException as e:
         # Log or handle the exception as needed
@@ -610,7 +614,7 @@ def process_scan_results(data_list):
                         "created_at": updated_record[9],
                         "updated_at": updated_record[10],
                         "status": "updated"
-                    })
+                        })
             else:
                 cursor.execute(insert_query, (input_url, jslink, endpoints, secrets, links, mapping, dom_sinks, js_url, md5_hash, timestamp, updated_at))
                 inserted_items.append({
@@ -625,7 +629,7 @@ def process_scan_results(data_list):
                     "md5_hash": md5_hash,
                     "created_at": timestamp,
                     "status": "inserted"
-                })
+                    })
 
         conn.commit()
     except sqlite3.Error as e:
@@ -637,13 +641,20 @@ def process_scan_results(data_list):
 
     return {"inserted": inserted_items, "updated": updated_items}
 
-def process_url_batch(urls, headers, secrets_file, save_js, save_db, verbose=False, jsonl=False, debug=False):
-    """Process a batch of URLs concurrently."""
+import time
+
+import time
+
+def process_url_batch(urls, headers, secrets_file, save_js, save_db, verbose=False, jsonl=False, debug=False, rate_limit=10):
+    """Process a batch of URLs concurrently with rate limiting."""
     results = []
+    request_count = 0  # Track the number of requests made
+    last_request_time = time.time()  # Track the time of the last request
+
     with ThreadPoolExecutor() as executor:
         # First, fetch JS links for all URLs
         js_futures = {executor.submit(fetch_js_links, url, headers): url for url in urls}
-        
+
         # Process JS links as they complete
         for future in as_completed(js_futures):
             url = js_futures[future]
@@ -653,7 +664,7 @@ def process_url_batch(urls, headers, secrets_file, save_js, save_db, verbose=Fal
                     _, js_links = result
                     # Process each JS link for the URL
                     js_futures_inner = {executor.submit(fetch_js_and_apply_regex, js_link, headers, save_js, secrets_file): js_link for js_link in js_links}
-                    
+
                     for js_future in as_completed(js_futures_inner):
                         try:
                             js_link = js_futures_inner[js_future]
@@ -669,19 +680,28 @@ def process_url_batch(urls, headers, secrets_file, save_js, save_db, verbose=Fal
                             if verbose and debug:
                                 print(f"Error processing JS link {js_link}: {str(e)}")
                             continue
-                    
+
                     if verbose and debug:
                         print(f"[+] Processed: {url} - Found {len(js_links)} JS links and {len(results)} links with matches.")
             except Exception as e:
                 if verbose and debug:
                     print(f"Error processing URL {url}: {str(e)}")
                 continue
-    
+
+            # Rate limiting logic
+            request_count += 1
+            if request_count >= rate_limit:
+                elapsed_time = time.time() - last_request_time
+                if elapsed_time < 1:  # If less than 1 second has passed
+                    time.sleep(1 - elapsed_time)  # Sleep to enforce the rate limit
+                request_count = 0  # Reset the request count
+                last_request_time = time.time()  # Reset the last request time
+
     changes_results = process_scan_results(results) if save_db else None
     return results, changes_results
 
-def process_urls_with_concurrency(urls, headers, secrets_file, save_js, save_db, concurrency=5, verbose=False, jsonl=False, debug=False):
-    """Process URLs with specified concurrency level."""
+def process_urls_with_concurrency(urls, headers, secrets_file, save_js, save_db, concurrency=5, verbose=False, jsonl=False, debug=False, rate_limit=10):
+    """Process URLs with specified concurrency level and rate limiting."""
     all_results = []
     all_changes = {"inserted": [], "updated": []}
 
@@ -689,7 +709,7 @@ def process_urls_with_concurrency(urls, headers, secrets_file, save_js, save_db,
     url_batches = [urls[i:i + concurrency] for i in range(0, len(urls), concurrency)]
 
     for batch in url_batches:
-        results, changes = process_url_batch(batch, headers, secrets_file, save_js, save_db, verbose, jsonl, debug)
+        results, changes = process_url_batch(batch, headers, secrets_file, save_js, save_db, verbose, jsonl, debug, rate_limit)
         all_results.extend(results)
         if changes:
             all_changes["inserted"].extend(changes["inserted"])
@@ -699,11 +719,11 @@ def process_urls_with_concurrency(urls, headers, secrets_file, save_js, save_db,
 
 def parse_headers(header_list):
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive'
-    }
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive'
+            }
 
     for header in header_list:
         try:
@@ -773,15 +793,15 @@ def post_to_ui(message_dict):
     # Display inserted messages
     for item in message_dict['inserted']:
         formatted_message = (
-            f"🚨 *JS Discovered: {item['input']}* 🚨\n"
-            f"JS Link: {item['jslink']}\n"
-            f"MD5 Hash: {item['md5_hash']}\n"
-            "Endpoints:\n"
-            ""
-        )
+                f"🚨 *JS Discovered: {item['input']}* 🚨\n"
+                f"JS Link: {item['jslink']}\n"
+                f"MD5 Hash: {item['md5_hash']}\n"
+                "Endpoints:\n"
+                ""
+                )
         formatted_message += "\n".join(item['endpoints'])
         formatted_message += ""
-        
+
         print("\n" + "="*50)
         print(formatted_message)
         print("="*50 + "\n")
@@ -789,11 +809,11 @@ def post_to_ui(message_dict):
     # Display updated messages
     for item in message_dict['updated']:
         formatted_message = (
-            f"⚠️ *Javascript Updated: {item['input']}* ⚠️\n"
-            f"JS Link: {item['jslink']}\n"
-            f"MD5 Hash: {item['md5_hash']}"
-        )
-        
+                f"⚠️ *Javascript Updated: {item['input']}* ⚠️\n"
+                f"JS Link: {item['jslink']}\n"
+                f"MD5 Hash: {item['md5_hash']}"
+                )
+
         print("\n" + "="*50)
         print(formatted_message)
         print("="*50 + "\n")
@@ -803,54 +823,54 @@ def post_to_slack(webhook_url, message_dict):
     if not message_dict['inserted'] and not message_dict['updated']:
         print("No new or updated entries to send.")
         return None  # Return None to indicate no message was sent
-    
+
     headers = {'Content-Type': 'application/json'}
-    
+
     # Send inserted messages
     for item in message_dict['inserted']:
         if item['endpoints']:  # Only proceed if the endpoint list is not empty
             formatted_message = (
-                f"🚨 *JS Discovered: {item['input']}* 🚨\n"
-                f"JS Link: {item['jslink']}\n"
-                f"MD5 Hash: `{item['md5_hash']}`\n"
-                "Endpoints:\n"
-                "```"
-            )
+                    f"🚨 *JS Discovered: {item['input']}* 🚨\n"
+                    f"JS Link: {item['jslink']}\n"
+                    f"MD5 Hash: `{item['md5_hash']}`\n"
+                    "Endpoints:\n"
+                    "```"
+                    )
             formatted_message += "\n".join(item['endpoints'])
             formatted_message += "```"
-            
+
             payload = {"text": formatted_message}
             response = requests.post(webhook_url, headers=headers, data=json.dumps(payload))
-            
+
             if response.status_code == 200:
                 pass
-                #print(f"Inserted message for {item['input']} posted successfully!")
-            else:
-                pass
-                #print(f"Failed to post inserted message for {item['input']}. Status Code: {response.status_code}, Response: {response.text}")
-    
+            #print(f"Inserted message for {item['input']} posted successfully!")
+        else:
+            pass
+        #print(f"Failed to post inserted message for {item['input']}. Status Code: {response.status_code}, Response: {response.text}")
+
     # Send updated messages
     for item in message_dict['updated']:
         if item['endpoints']:  # Only proceed if the endpoint list is not empty
             formatted_message = (
-                f"⚠️ *Javascript Updated: {item['input']}* ⚠️\n"
-                f"JS Link: {item['jslink']}\n"
-                f"MD5 Hash: `{item['md5_hash']}`\n"
-                "Endpoints:\n"
-                "```"
-            )
+                    f"⚠️ *Javascript Updated: {item['input']}* ⚠️\n"
+                    f"JS Link: {item['jslink']}\n"
+                    f"MD5 Hash: `{item['md5_hash']}`\n"
+                    "Endpoints:\n"
+                    "```"
+                    )
             formatted_message += "\n".join(item['endpoints'])
             formatted_message += "```"
-            
+
             payload = {"text": formatted_message}
             response = requests.post(webhook_url, headers=headers, data=json.dumps(payload))
-            
+
             if response.status_code == 200:
                 pass
-                #print(f"Updated message for {item['input']} posted successfully!")
-            else:
-                pass
-                #print(f"Failed to post updated message for {item['input']}. Status Code: {response.status_code}, Response: {response.text}")
+            #print(f"Updated message for {item['input']} posted successfully!")
+        else:
+            pass
+        #print(f"Failed to post updated message for {item['input']}. Status Code: {response.status_code}, Response: {response.text}")
 
 def main():
     # Parse command line arguments
@@ -870,6 +890,7 @@ def main():
     parser.add_argument('-silent', '--silent', action='store_true', help="dont print anything except output")
     parser.add_argument('-debug', '--debug', action='store_true', help="debug mode allows you view much more details happening in background.")
     parser.add_argument('-c', '--concurrency', type=int, default=5, help="Number of URLs to process concurrently (default: 5)")
+    parser.add_argument('-rl', '--rate_limit', type=int, default=10, help="Rate limit in requests per second (default: 10)")  # New argument
 
     args = parser.parse_args()
 
@@ -915,16 +936,16 @@ def main():
 
     # Process URLs with concurrency
     results, changed_results = process_urls_with_concurrency(
-        urls, 
-        headers, 
-        args.secrets_file, 
-        args.save_js, 
-        True,
-        args.concurrency,
-        verbose=args.verbose, 
-        jsonl=args.jsonl, 
-        debug=args.debug
-    )
+            urls, 
+            headers, 
+            args.secrets_file, 
+            args.save_js, 
+            True,
+            args.concurrency,
+            verbose=args.verbose, 
+            jsonl=args.jsonl, 
+            debug=args.debug
+            )
 
     if args.slack_webhook:
         post_to_slack(args.slack_webhook, changed_results)
@@ -953,16 +974,16 @@ def main():
             if args.verbose:
                 print(f"Re-running process after {args.monitor}...")
             results, changed_results = process_urls_with_concurrency(
-                urls, 
-                headers, 
-                args.secrets_file, 
-                args.save_js, 
-                True,
-                args.concurrency,
-                verbose=args.verbose, 
-                jsonl=args.jsonl, 
-                debug=args.debug
-            )
+                    urls, 
+                    headers, 
+                    args.secrets_file, 
+                    args.save_js, 
+                    True,
+                    args.concurrency,
+                    verbose=args.verbose, 
+                    jsonl=args.jsonl, 
+                    debug=args.debug
+                    )
             if args.slack_webhook:
                 post_to_slack(args.slack_webhook, changed_results)
             else:
@@ -977,7 +998,7 @@ def main():
         pass
 
     # Process URLs based on the --monitor flag
-    
+
     if args.monitor is not None:
         print(f"Monitoring javascript changes every {args.monitor}")
         interval = parse_interval(args.monitor)
@@ -998,17 +1019,17 @@ def main():
                     print(f"Results saved to {args.output}")
             else:
                 pass
-                #print(json.dumps(results, indent=2))
+            #print(json.dumps(results, indent=2))
 
 
 def parse_interval(interval):
     """Parse the interval string and return the time in seconds."""
     time_units = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400, 'w': 604800}
-    
+
     unit = interval[-1]
     if unit not in time_units:
         raise ValueError(f"Invalid time unit in {interval}. Must be one of {', '.join(time_units.keys())}.")
-    
+
     value = int(interval[:-1])
     return value * time_units[unit]
 
